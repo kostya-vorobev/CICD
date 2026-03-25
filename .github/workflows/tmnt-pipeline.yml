@@ -1,0 +1,137 @@
+name: TMNT Protected Main Workflow
+
+on:
+
+  push:
+    branches: ["main"]
+
+  pull_request:
+    branches: ["main"]
+
+  workflow_dispatch:
+
+
+jobs:
+
+  protect-main:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Block direct pushes to main
+
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+        run: |
+
+          echo "::error::Direct pushes to main are blocked!"
+
+          echo "Use Pull Request instead"
+
+          exit 1
+
+
+
+  pr-validation:
+
+    needs: protect-main
+
+    if: github.event_name == 'pull_request'
+
+    runs-on: ubuntu-latest
+
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+      - name: Setup Node
+
+        uses: actions/setup-node@v4
+
+        with:
+
+          node-version: 20
+
+
+      - name: Install dependencies
+
+        run: npm install
+
+
+      - name: Run ESLint
+
+        run: npm run lint
+
+
+      - name: Run tests
+
+        run: npm test
+
+
+      - name: Build Docker image
+
+        run: docker build -t tmnt-app .
+
+
+
+  sync-notification:
+
+    needs: pr-validation
+
+    if: github.event_name == 'pull_request'
+
+    runs-on: ubuntu-latest
+
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+      - name: Update fresh branch
+
+        run: |
+
+          git config --global user.name "GitHub Actions"
+
+          git config --global user.email "actions@github.com"
+
+
+          git fetch origin main:main
+
+          git checkout -B fresh origin/main
+
+          git push origin fresh --force
+
+
+
+  deploy:
+
+    needs: [pr-validation, sync-notification]
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+      - name: Build Docker image
+
+        run: docker build -t tmnt-app .
+
+
+      - name: Run container
+
+        run: docker run -d -p 3000:3000 tmnt-app
+
+
+      - name: Deploy confirmation
+
+        run: echo "TMNT deployed successfully"
